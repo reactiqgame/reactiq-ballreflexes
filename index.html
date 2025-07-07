@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ReactiQ</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background-color: #111;
+      color: white;
+      margin: 0;
+    }
+    canvas {
+      background-color: #222;
+      display: block;
+      margin: 20px auto;
+      border: 2px solid #555;
+    }
+    button, select {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 10px;
+    }
+    #instructions {
+      max-width: 600px;
+      margin: 20px auto;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+    .color {
+      font-weight: bold;
+    }
+    .blue { color: #00f; }
+    .red { color: #f33; }
+    .green { color: #0f0; }
+    #difficultyMenu {
+      margin: 20px auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>ReactiQ</h1>
+
+  <div id="difficultyMenu">
+    <label for="difficulty">Choose your difficulty:</label>
+    <select id="difficulty">
+      <option value="easy">🟢 Easy</option>
+      <option value="medium">🟡 Medium</option>
+      <option value="hard">🟠 Difficult</option>
+      <option value="extreme">🔴 Extreme</option>
+    </select>
+    <button id="startGame">Start</button>
+  </div>
+
+  <canvas id="gameCanvas" style="display:none;"></canvas>
+  <p id="score" style="display:none;">Score: 0 | High Score: 0</p>
+  <p id="gameOver" style="display:none; font-size: 20px; margin-top: 10px;">Game Over</p>
+  <button id="restart" style="display:none;">Restart</button>
+
+  <div id="instructions">
+    <p><span class="color blue">Blue ball</span>: Tap or press space <strong>once</strong></p>
+    <p><span class="color red">Red ball</span>: Tap or press space <strong>twice quickly</strong></p>
+    <p><span class="color green">Green ball</span>: <strong>Do nothing!</strong></p>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = 400;
+    canvas.height = 300;
+
+    const difficultyMenu = document.getElementById("difficultyMenu");
+    const startGameBtn = document.getElementById("startGame");
+    const difficultySelector = document.getElementById("difficulty");
+    const scoreText = document.getElementById("score");
+    const gameOverText = document.getElementById("gameOver");
+    const restartBtn = document.getElementById("restart");
+
+    let score = 0;
+    let highScore = localStorage.getItem("highScore") || 0;
+    let misses = 0;
+    let gameOver = false;
+    let activeBall = null;
+    let currentDifficulty = "easy";
+
+    const speedOptions = {
+      easy:    [1.5, 2, 2.5, 3, 3.5, 4],
+      medium:  [3, 4.5, 5.5, 6.5, 7.5, 8.5],
+      hard:    [5.5, 7, 8.5, 10, 11.5, 13],
+      extreme: [7, 9.5, 12, 14.5, 17, 20]
+    };
+
+    function randomColor() {
+      const r = Math.random();
+      return r < 0.33 ? "blue" : r < 0.66 ? "red" : "green";
+    }
+
+    function randomSpeed() {
+      const speeds = speedOptions[currentDifficulty];
+      return speeds[Math.floor(Math.random() * speeds.length)];
+    }
+
+    function spawnBall() {
+      activeBall = {
+        x: -20,
+        y: canvas.height / 2,
+        radius: 15,
+        speed: randomSpeed(),
+        color: randomColor(),
+        responded: false
+      };
+    }
+
+    function drawBall(ball) {
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fillStyle = ball.color;
+      ctx.fill();
+    }
+
+    function update() {
+      if (gameOver) return;
+      if (!activeBall) spawnBall();
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      activeBall.x += activeBall.speed;
+      drawBall(activeBall);
+
+      if (activeBall.x - activeBall.radius > canvas.width) {
+        if (!activeBall.responded) {
+          if (activeBall.color === "green") {
+            score++;
+          } else {
+            misses++;
+          }
+        }
+        checkGameOver();
+        activeBall = null;
+      }
+
+      scoreText.textContent = `Score: ${score} | High Score: ${Math.max(score, highScore)}`;
+      requestAnimationFrame(update);
+    }
+
+    function checkGameOver() {
+      if (misses >= 3) {
+        gameOver = true;
+        gameOverText.style.display = "block";
+        restartBtn.style.display = "inline-block";
+        difficultyMenu.style.display = "block";
+        canvas.style.display = "none";
+        scoreText.style.display = "none";
+        if (score > highScore) {
+          localStorage.setItem("highScore", score);
+        }
+      }
+    }
+
+    function handleInput(type) {
+      if (!activeBall || activeBall.responded || gameOver) return;
+      const expected = activeBall.color === "blue" ? "single"
+                      : activeBall.color === "red" ? "double"
+                      : "none";
+      if ((type === expected && expected !== "none") || (expected === "none" && type === "none")) {
+        score++;
+        activeBall.responded = true;
+      } else {
+        misses++;
+        checkGameOver();
+        activeBall = null;
+      }
+    }
+
+    let lastTapTime = 0;
+    let tapTimeout = null;
+
+    document.addEventListener("keydown", (e) => {
+      if (e.code === "Space" && !gameOver) {
+        const now = Date.now();
+        if (now - lastTapTime < 300) {
+          clearTimeout(tapTimeout);
+          handleInput("double");
+        } else {
+          tapTimeout = setTimeout(() => handleInput("single"), 300);
+        }
+        lastTapTime = now;
+      }
+    });
+
+    canvas.addEventListener("click", (e) => {
+      if (!gameOver) {
+        const now = Date.now();
+        if (now - lastTapTime < 300) {
+          clearTimeout(tapTimeout);
+          handleInput("double");
+        } else {
+          tapTimeout = setTimeout(() => handleInput("single"), 300);
+        }
+        lastTapTime = now;
+      }
+    });
+
+    canvas.addEventListener("touchstart", (e) => {
+      if (!gameOver) {
+        const now = Date.now();
+        if (now - lastTapTime < 300) {
+          clearTimeout(tapTimeout);
+          handleInput("double");
+        } else {
+          tapTimeout = setTimeout(() => handleInput("single"), 300);
+        }
+        lastTapTime = now;
+      }
+    });
+
+    restartBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      score = 0;
+      misses = 0;
+      gameOver = false;
+      activeBall = null;
+      gameOverText.style.display = "none";
+      restartBtn.style.display = "none";
+      difficultyMenu.style.display = "none";
+      canvas.style.display = "block";
+      scoreText.style.display = "block";
+      scoreText.textContent = `Score: 0 | High Score: ${highScore}`;
+      update();
+    });
+
+    startGameBtn.addEventListener("click", () => {
+      score = 0;
+      misses = 0;
+      gameOver = false;
+      activeBall = null;
+      currentDifficulty = difficultySelector.value;
+      gameOverText.style.display = "none";
+      restartBtn.style.display = "none";
+      difficultyMenu.style.display = "none";
+      canvas.style.display = "block";
+      scoreText.style.display = "block";
+      scoreText.textContent = `Score: 0 | High Score: ${highScore}`;
+      update();
+    });
+
+    update();
+  </script>
+</body>
+</html>
